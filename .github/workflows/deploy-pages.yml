@@ -21,7 +21,7 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     env:
-      NEXT_PUBLIC_FIREBASE_API_KEY: "AIzaSyCI5yyCGQiHAxeqFE3kVW55IPiWvz7LVPk"
+      NEXT_PUBLIC_FIREBASE_API_KEY: "${{ secrets.NEXT_PUBLIC_FIREBASE_API_KEY }}"
       NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: "gamemaster-ai-69b41.firebaseapp.com"
       NEXT_PUBLIC_FIREBASE_PROJECT_ID: "gamemaster-ai-69b41"
       NEXT_PUBLIC_FIREBASE_APP_ID: "1:348924371995:web:21f85bbc17679f8f0084be"
