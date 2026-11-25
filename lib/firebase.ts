@@ -8,7 +8,7 @@
  */
 
 import { getApp, getApps, initializeApp, type FirebaseApp } from "firebase/app";
-import { getAuth, type Auth } from "firebase/auth";
+import { getAuth, signInAnonymously, type Auth } from "firebase/auth";
 import { getFirestore, type Firestore } from "firebase/firestore";
 
 const config = {
@@ -39,4 +39,28 @@ export function getFirebaseAuth(): Auth | null {
 export function getDb(): Firestore | null {
   const a = getFirebaseApp();
   return a ? getFirestore(a) : null;
+}
+
+let authPromise: Promise<string | null> | null = null;
+
+/**
+ * Ensure an anonymous Auth session exists and return its uid.
+ *
+ * Firestore security rules require `request.auth != null`, so every store
+ * call must wait for this first — the local identity in `session.ts` is a
+ * display/profile identity only and does NOT authenticate requests.
+ * Concurrent callers share one in-flight sign-in; a failed attempt clears
+ * the cache so the next call retries.
+ */
+export function ensureAnonAuth(): Promise<string | null> {
+  const auth = getFirebaseAuth();
+  if (!auth) return Promise.resolve(null);
+  if (auth.currentUser) return Promise.resolve(auth.currentUser.uid);
+  authPromise ??= signInAnonymously(auth)
+    .then((cred) => cred.user.uid)
+    .catch(() => null)
+    .finally(() => {
+      authPromise = null;
+    });
+  return authPromise;
 }

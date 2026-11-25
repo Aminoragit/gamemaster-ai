@@ -26,7 +26,7 @@ import {
   where,
   type Firestore,
 } from "firebase/firestore";
-import { firebaseReady, getDb } from "./firebase";
+import { ensureAnonAuth, firebaseReady, getDb } from "./firebase";
 import { canDropIn, rollDropInRole } from "./dropin";
 import type { Rng } from "./dice";
 import {
@@ -306,34 +306,39 @@ class FirestoreStore implements GameStore {
     if (!db) throw new Error("Firestore is not configured");
     return db;
   }
+  /** db() gated on an anonymous Auth session (rules require request.auth). */
+  private async dbAsync(): Promise<Firestore> {
+    await ensureAnonAuth();
+    return this.db();
+  }
   async getUser(uid: string) {
-    const s = await getDoc(doc(this.db(), "users", uid));
+    const s = await getDoc(doc((await this.dbAsync()), "users", uid));
     return s.exists() ? (s.data() as UserDoc) : null;
   }
   async saveUser(u: UserDoc & { uid?: string }) {
     if (!u.uid) return;
-    await setDoc(doc(this.db(), "users", u.uid), u, { merge: true });
+    await setDoc(doc((await this.dbAsync()), "users", u.uid), u, { merge: true });
   }
   async getCharacter(id: string) {
-    const s = await getDoc(doc(this.db(), "characters", id));
+    const s = await getDoc(doc((await this.dbAsync()), "characters", id));
     return s.exists() ? (s.data() as CharacterSheet) : null;
   }
   async saveCharacter(c: CharacterSheet) {
-    await setDoc(doc(this.db(), "characters", c.id), c, { merge: true });
+    await setDoc(doc((await this.dbAsync()), "characters", c.id), c, { merge: true });
   }
   async findCharacterByOwner(uid: string) {
-    const q = query(collection(this.db(), "characters"), where("ownerUid", "==", uid));
+    const q = query(collection((await this.dbAsync()), "characters"), where("ownerUid", "==", uid));
     const s = await getDocs(q);
     return s.empty ? null : (s.docs[0].data() as CharacterSheet);
   }
-  async saveRoom(r: Room) { await setDoc(doc(this.db(), "rooms", r.code), r, { merge: true }); }
+  async saveRoom(r: Room) { await setDoc(doc((await this.dbAsync()), "rooms", r.code), r, { merge: true }); }
   async getRoom(code: string) {
-    const s = await getDoc(doc(this.db(), "rooms", code));
+    const s = await getDoc(doc((await this.dbAsync()), "rooms", code));
     return s.exists() ? (s.data() as Room) : null;
   }
   async listPublicRooms() {
     const q = query(
-      collection(this.db(), "rooms"),
+      collection((await this.dbAsync()), "rooms"),
       where("visibility", "==", "public"),
       where("status", "==", "playing"),
     );
@@ -341,7 +346,7 @@ class FirestoreStore implements GameStore {
   }
   async findSoloRoom(uid: string) {
     const q = query(
-      collection(this.db(), "rooms"),
+      collection((await this.dbAsync()), "rooms"),
       where("hostUid", "==", uid),
       where("mode", "==", "solo"),
     );
@@ -350,71 +355,81 @@ class FirestoreStore implements GameStore {
     return rooms[0] ?? null;
   }
   async saveMember(code: string, m: RoomMember) {
-    await setDoc(doc(this.db(), "rooms", code, "members", m.uid), m, { merge: true });
+    await setDoc(doc((await this.dbAsync()), "rooms", code, "members", m.uid), m, { merge: true });
   }
   async getMembers(code: string) {
-    const s = await getDocs(collection(this.db(), "rooms", code, "members"));
+    const s = await getDocs(collection((await this.dbAsync()), "rooms", code, "members"));
     return s.docs.map((d) => d.data() as RoomMember).sort((a, b) => a.joinedAt - b.joinedAt);
   }
   async addLog(code: string, e: LogEntry) {
-    await setDoc(doc(this.db(), "rooms", code, "log", e.id), e);
+    await setDoc(doc((await this.dbAsync()), "rooms", code, "log", e.id), e);
   }
   async getLog(code: string) {
-    const s = await getDocs(collection(this.db(), "rooms", code, "log"));
+    const s = await getDocs(collection((await this.dbAsync()), "rooms", code, "log"));
     return s.docs.map((d) => d.data() as LogEntry).sort((a, b) => a.at - b.at);
   }
   async saveEncounter(code: string, e: Encounter) {
-    await setDoc(doc(this.db(), "rooms", code, "encounters", e.id), e, { merge: true });
+    await setDoc(doc((await this.dbAsync()), "rooms", code, "encounters", e.id), e, { merge: true });
   }
   async getEncounters(code: string) {
-    const s = await getDocs(collection(this.db(), "rooms", code, "encounters"));
+    const s = await getDocs(collection((await this.dbAsync()), "rooms", code, "encounters"));
     return s.docs.map((d) => d.data() as Encounter);
   }
   async saveFriendRequest(r: FriendRequest) {
-    await setDoc(doc(this.db(), "friendRequests", r.id), r, { merge: true });
+    await setDoc(doc((await this.dbAsync()), "friendRequests", r.id), r, { merge: true });
   }
   async getFriendRequests() {
-    return (await getDocs(collection(this.db(), "friendRequests"))).docs.map((d) => d.data() as FriendRequest);
+    return (await getDocs(collection((await this.dbAsync()), "friendRequests"))).docs.map((d) => d.data() as FriendRequest);
   }
   async saveFriendship(f: Friendship) {
-    await setDoc(doc(this.db(), "friendships", f.pairId), f, { merge: true });
+    await setDoc(doc((await this.dbAsync()), "friendships", f.pairId), f, { merge: true });
   }
   async getFriendships() {
-    return (await getDocs(collection(this.db(), "friendships"))).docs.map((d) => d.data() as Friendship);
+    return (await getDocs(collection((await this.dbAsync()), "friendships"))).docs.map((d) => d.data() as Friendship);
   }
   async getInvites() {
-    return (await getDocs(collection(this.db(), "invites"))).docs.map((d) => d.data() as Invite);
+    return (await getDocs(collection((await this.dbAsync()), "invites"))).docs.map((d) => d.data() as Invite);
   }
-  async addKickRecord(r: KickRecord) { await setDoc(doc(this.db(), "kickRecords", r.id), r); }
+  async addKickRecord(r: KickRecord) { await setDoc(doc((await this.dbAsync()), "kickRecords", r.id), r); }
   async getKickRecords(code: string, uid: string) {
     const q = query(
-      collection(this.db(), "kickRecords"),
+      collection((await this.dbAsync()), "kickRecords"),
       where("roomCode", "==", code),
       where("targetUid", "==", uid),
     );
     return (await getDocs(q)).docs.map((d) => d.data() as KickRecord);
   }
-  async addDropInEvent(e: DropInEvent) { await setDoc(doc(this.db(), "dropInEvents", e.id), e); }
+  async addDropInEvent(e: DropInEvent) { await setDoc(doc((await this.dbAsync()), "dropInEvents", e.id), e); }
   async getDropInEvents(code: string) {
-    const q = query(collection(this.db(), "dropInEvents"), where("roomCode", "==", code));
+    const q = query(collection((await this.dbAsync()), "dropInEvents"), where("roomCode", "==", code));
     return (await getDocs(q)).docs.map((d) => d.data() as DropInEvent);
   }
   async saveKickVote(code: string, v: KickVote) {
-    await setDoc(doc(this.db(), "rooms", code, "kickVotes", v.id), v, { merge: true });
+    await setDoc(doc((await this.dbAsync()), "rooms", code, "kickVotes", v.id), v, { merge: true });
   }
   async getKickVotes(code: string) {
-    const s = await getDocs(collection(this.db(), "rooms", code, "kickVotes"));
+    const s = await getDocs(collection((await this.dbAsync()), "rooms", code, "kickVotes"));
     return s.docs.map((d) => d.data() as KickVote);
   }
   subscribe(code: string, emit: () => void) {
-    const db = this.db();
-    const unsubs = [
-      onSnapshot(doc(db, "rooms", code), emit),
-      onSnapshot(collection(db, "rooms", code, "members"), emit),
-      onSnapshot(collection(db, "rooms", code, "log"), emit),
-      onSnapshot(collection(db, "rooms", code, "encounters"), emit),
-    ];
-    return () => unsubs.forEach((u) => u());
+    // Listeners attached before sign-in would be denied by the rules and
+    // terminated, so attach only once the anonymous session exists.
+    let unsubs: Array<() => void> = [];
+    let cancelled = false;
+    void ensureAnonAuth().then(() => {
+      if (cancelled) return;
+      const db = this.db();
+      unsubs = [
+        onSnapshot(doc(db, "rooms", code), emit),
+        onSnapshot(collection(db, "rooms", code, "members"), emit),
+        onSnapshot(collection(db, "rooms", code, "log"), emit),
+        onSnapshot(collection(db, "rooms", code, "encounters"), emit),
+      ];
+    });
+    return () => {
+      cancelled = true;
+      unsubs.forEach((u) => u());
+    };
   }
 }
 
